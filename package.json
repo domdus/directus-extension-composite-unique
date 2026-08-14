@@ -1,0 +1,70 @@
+{
+	"name": "directus-extension-composite-unique",
+	"description": "Find duplicate combinations, clean them up, and apply composite unique constraints — with a Studio wizard and API-side validation",
+	"icon": "key",
+	"version": "1.0.0",
+	"license": "MIT",
+	"keywords": [
+		"directus",
+		"directus-extension",
+		"directus-extension-bundle",
+		"composite-unique",
+		"unique",
+		"constraint",
+		"junction",
+		"m2m",
+		"duplicates"
+	],
+	"type": "module",
+	"files": [
+		"dist",
+		"LICENSE",
+		"README.md"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/domdus/directus-extension-composite-unique.git"
+	},
+	"bugs": {
+		"url": "https://github.com/domdus/directus-extension-composite-unique/issues"
+	},
+	"homepage": "https://github.com/domdus/directus-extension-composite-unique#readme",
+	"directus:extension": {
+		"type": "bundle",
+		"path": {
+			"app": "dist/app.js",
+			"api": "dist/api.js"
+		},
+		"entries": [
+			{
+				"type": "module",
+				"name": "composite-unique-module",
+				"source": "src/module/index.ts"
+			},
+			{
+				"type": "endpoint",
+				"name": "composite-unique-endpoint",
+				"source": "src/endpoint/index.ts"
+			},
+			{
+				"type": "hook",
+				"name": "composite-unique-hook",
+				"source": "src/hook/index.ts"
+			}
+		],
+		"host": ">=9.26.0 <13.0.0"
+	},
+	"scripts": {
+		"build": "directus-extension build",
+		"dev": "directus-extension build -w --no-minify",
+		"link": "directus-extension link",
+		"add": "directus-extension add"
+	},
+	"devDependencies": {
+		"@directus/extensions-sdk": "^17.0.0",
+		"@types/express": "^4.17.21",
+		"@types/node": "^20.0.0",
+		"typescript": "^5.0.0",
+		"vue": "^3.3.7"
+	}
+}
