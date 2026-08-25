@@ -2,7 +2,7 @@
 	"name": "directus-extension-composite-unique",
 	"description": "Find duplicate combinations, clean them up, and apply composite unique constraints — with a Studio wizard and API-side validation",
 	"icon": "key",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"license": "MIT",
 	"keywords": [
 		"directus",
