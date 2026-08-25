@@ -159,13 +159,7 @@ onMounted(load);
 </script>
 
 <style scoped>
-.page {
-	padding: var(--content-padding);
-	padding-block-end: var(--content-padding-bottom, var(--content-padding));
-	max-width: 1000px;
-}
-
-.page--flush-top {
+.page-container--flush-top {
 	padding-block-start: 0;
 }
 
