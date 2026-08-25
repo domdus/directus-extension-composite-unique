@@ -159,6 +159,12 @@ onMounted(load);
 </script>
 
 <style scoped>
+.page-container {
+	padding: var(--content-padding);
+	padding-block-end: var(--content-padding-bottom);
+	max-inline-size: 67.5rem;
+}
+
 .page-container--flush-top {
 	padding-block-start: 0;
 }
