@@ -99,9 +99,8 @@ Enforcement does **not** depend on the module being open:
 
 ## Constraint vs index
 
-Applying a composite unique **constraint** (the rule) creates a **unique index** in the database. That is how SQL vendors implement uniqueness — not a second optional feature.
+Applying a composite unique **constraint** (the rule) creates a **unique index** in the database.
 
-- One **Apply** = one unique rule on those columns  
 - The **Index Name** (e.g. `uq_articles_tags_articles_id_tags_id`) is the name of that database unique index  
 - Prefix: `uq_` (unique). Older installs may still show `cu_` — both are recognized  
 - PostgreSQL, MySQL/MariaDB, SQLite (and other Directus SQL vendors via Knex) are supported the same way
@@ -176,14 +175,6 @@ npm run build
    1. Open **Settings → Project Settings → Modules**  
    2. Enable **Composite Unique**  
    3. Open **Composite Unique** from the left bar  
-
-## Bundle contents
-
-| Entry | Role |
-| --- | --- |
-| **Module** | Wizard + Constraints UI (admins) |
-| **Endpoint** | `check` / `dedupe` / `apply` / `remove` (admin API) |
-| **Hook** | Create/update validation for applied constraints |
 
 Constraints are **never** applied automatically on extension install or Directus startup. Only an admin Apply (or Remove) changes the database schema for these uniques.
 
