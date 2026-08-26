@@ -20,6 +20,8 @@ You can add such a constraint in SQL yourself, but Directus will not show it in 
 
 Open **Composite Unique** from the left bar (**admins only**).
 
+<img alt="Composite Unique wizard — select M2M junctions and field pairs" src="https://raw.githubusercontent.com/domdus/directus-extension-composite-unique/main/docs/composite_unique_wizard.png" width="800" />
+
 ## What this is (and is not)
 
 | This extension **does** | This extension **does not** |
@@ -66,9 +68,26 @@ Status in the list:
 - Columns: collection, fields, **index name**, applied time  
 - **Remove** drops the database unique index/constraint **and** removes it from this list (always)
 
+<img alt="Composite Unique constraints — applied indexes with remove" src="https://raw.githubusercontent.com/domdus/directus-extension-composite-unique/main/docs/composite_unique_constraints.png" width="800" />
+
 ### API validation (hook)
 
 After a constraint is applied, create/update through Directus is checked server-side. Violations return a clear payload error instead of only a raw SQL failure.
+
+Example when creating a duplicate `test_categories` row (`test_id` + `categories_id` already exist):
+
+```json
+{
+    "errors": [
+        {
+            "message": "Composite unique violation on \"test_categories\": (test_id, categories_id) must be unique",
+            "extensions": {
+                "code": "INTERNAL_SERVER_ERROR"
+            }
+        }
+    ]
+}
+```
 
 Enforcement does **not** depend on the module being open:
 
