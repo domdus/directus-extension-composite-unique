@@ -7,7 +7,14 @@ type SchemaLike = {
 		{
 			collection?: string;
 			primary?: string;
-			fields?: Record<string, { field?: string; type?: string | null }>;
+			fields?: Record<
+				string,
+				{
+					field?: string;
+					type?: string | null;
+					schema?: { max_length?: number | null; data_type?: string | null } | null;
+				}
+			>;
 		}
 	>;
 	relations?: Array<{
@@ -24,15 +31,45 @@ export function getClientName(database: any): string {
 	return String(client).toLowerCase();
 }
 
+const INDEX_NAME_LIMIT = 63;
+
+function sanitizeIndexName(raw: string): string {
+	return raw.replace(/[^a-zA-Z0-9_]/g, '_');
+}
+
+/** Stable short suffix so two long names that share a prefix stay distinct. */
+function hashIndexName(raw: string): string {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < raw.length; i++) {
+		hash ^= raw.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
 export function buildIndexName(collection: string, fields: string[]): string {
-	const raw = `uq_${collection}_${fields.join('_')}`.replace(/[^a-zA-Z0-9_]/g, '_');
-	return raw.slice(0, 63);
+	const raw = sanitizeIndexName(`uq_${collection}_${fields.join('_')}`);
+	if (raw.length <= INDEX_NAME_LIMIT) return raw;
+	const suffix = hashIndexName(raw);
+	return `${raw.slice(0, INDEX_NAME_LIMIT - suffix.length - 1)}_${suffix}`;
+}
+
+/** v1.0.2 and earlier sliced long names with no hash. Still recognized on lookup. */
+function buildTruncatedIndexName(collection: string, fields: string[]): string {
+	return sanitizeIndexName(`uq_${collection}_${fields.join('_')}`).slice(0, INDEX_NAME_LIMIT);
 }
 
 /** Legacy prefix from earlier builds — still recognized for exists/drop. */
 export function buildLegacyIndexName(collection: string, fields: string[]): string {
-	const raw = `cu_${collection}_${fields.join('_')}`.replace(/[^a-zA-Z0-9_]/g, '_');
-	return raw.slice(0, 63);
+	return sanitizeIndexName(`cu_${collection}_${fields.join('_')}`).slice(0, INDEX_NAME_LIMIT);
+}
+
+function knownIndexNames(collection: string, fields: string[]): Set<string> {
+	return new Set([
+		buildIndexName(collection, fields),
+		buildLegacyIndexName(collection, fields),
+		buildTruncatedIndexName(collection, fields),
+	]);
 }
 
 export function getJunctionCollections(schema: SchemaLike): Set<string> {
@@ -188,8 +225,7 @@ export async function constraintExists(
 	fields: string[],
 ): Promise<{ exists: boolean; indexName: string | null }> {
 	const client = getClientName(database);
-	const expected = buildIndexName(collection, fields);
-	const legacy = buildLegacyIndexName(collection, fields);
+	const names = knownIndexNames(collection, fields);
 
 	try {
 		if (client.includes('pg') || client.includes('postgres') || client.includes('cockroach')) {
@@ -207,7 +243,7 @@ export async function constraintExists(
 				const name = String(row.indexname || '');
 				const def = String(row.indexdef || '');
 				if (!/^CREATE UNIQUE INDEX /i.test(def)) continue;
-				if (name === expected || name === legacy || uniqueDefMatchesFields(def, fields)) {
+				if (names.has(name) || uniqueDefMatchesFields(def, fields)) {
 					return { exists: true, indexName: name };
 				}
 			}
@@ -216,16 +252,16 @@ export async function constraintExists(
 
 		if (client.includes('mysql') || client.includes('maria')) {
 			const result = await database.raw(`SHOW INDEX FROM ?? WHERE Non_unique = 0`, [collection]);
-			const rows = Array.isArray(result) ? result[0] || result : result;
+			const rows = mysqlRows(result);
 			const byKey = new Map<string, string[]>();
-			for (const row of rows || []) {
-				const keyName = String(row.Key_name || '');
-				if (keyName === 'PRIMARY') continue;
+			for (const row of rows) {
+				const keyName = String(rowValue(row, 'Key_name') || '');
+				if (!keyName || keyName === 'PRIMARY') continue;
 				if (!byKey.has(keyName)) byKey.set(keyName, []);
-				byKey.get(keyName)!.push(String(row.Column_name));
+				byKey.get(keyName)!.push(String(rowValue(row, 'Column_name') || ''));
 			}
 			for (const [name, cols] of byKey) {
-				if (name === expected || name === legacy || fieldsMatch(cols, fields)) {
+				if (names.has(name) || fieldsMatch(cols.filter(Boolean), fields)) {
 					return { exists: true, indexName: name };
 				}
 			}
@@ -234,13 +270,47 @@ export async function constraintExists(
 
 		if (client.includes('sqlite')) {
 			const result = await database.raw(`PRAGMA index_list(??)`, [collection]);
-			const indexes = result || [];
+			const indexes = Array.isArray(result) ? result : [];
 			for (const index of indexes) {
 				if (!index.unique) continue;
 				const name = String(index.name || '');
 				const info = await database.raw(`PRAGMA index_info(??)`, [name]);
-				const cols = (info || []).map((r: any) => String(r.name));
-				if (name === expected || name === legacy || fieldsMatch(cols, fields)) {
+				const infoRows = Array.isArray(info) ? info : [];
+				const cols = infoRows.map((r: any) => String(r.name));
+				if (names.has(name) || fieldsMatch(cols, fields)) {
+					return { exists: true, indexName: name };
+				}
+			}
+			return { exists: false, indexName: null };
+		}
+
+		if (client.includes('mssql') || client.includes('tedious')) {
+			const result = await database.raw(
+				`
+				SELECT i.name AS index_name, col.name AS column_name
+				FROM sys.indexes i
+				INNER JOIN sys.index_columns ic
+					ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+				INNER JOIN sys.columns col
+					ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+				WHERE i.object_id = OBJECT_ID(?)
+				  AND i.is_unique = 1
+				  AND i.is_primary_key = 0
+				  AND ic.is_included_column = 0
+				  AND ic.key_ordinal > 0
+				ORDER BY i.name, ic.key_ordinal
+				`,
+				[collection],
+			);
+			const byKey = new Map<string, string[]>();
+			for (const row of result || []) {
+				const keyName = String(rowValue(row, 'index_name') || '');
+				if (!keyName) continue;
+				if (!byKey.has(keyName)) byKey.set(keyName, []);
+				byKey.get(keyName)!.push(String(rowValue(row, 'column_name') || ''));
+			}
+			for (const [name, cols] of byKey) {
+				if (names.has(name) || fieldsMatch(cols.filter(Boolean), fields)) {
 					return { exists: true, indexName: name };
 				}
 			}
@@ -253,20 +323,97 @@ export async function constraintExists(
 	return { exists: false, indexName: null };
 }
 
+function mysqlRows(result: any): any[] {
+	if (Array.isArray(result) && Array.isArray(result[0])) return result[0];
+	if (Array.isArray(result)) return result;
+	return [];
+}
+
+function rowValue(row: any, key: string): unknown {
+	if (!row || typeof row !== 'object') return undefined;
+	if (row[key] != null) return row[key];
+	const found = Object.keys(row).find((candidate) => candidate.toLowerCase() === key.toLowerCase());
+	return found ? row[found] : undefined;
+}
+
 function uniqueDefMatchesFields(indexDef: string, fields: string[]): boolean {
-	const match = indexDef.match(/\(([^)]+)\)\s*$/);
+	// Partial unique indexes do not cover every row.
+	if (/\swhere\s/i.test(indexDef)) return false;
+	const match = indexDef.match(/\(([^()]*)\)\s*(?:storing\s*\([^()]*\))?\s*$/i);
 	if (!match?.[1]) return false;
 	const cols = match[1]
 		.split(',')
-		.map((part) => part.trim().replace(/^"|"$/g, '').replace(/^`|`$/g, ''))
+		.map(columnFromIndexExpr)
 		.filter(Boolean);
 	return fieldsMatch(cols, fields);
+}
+
+/** `item ASC`, `"item" DESC NULLS LAST`, `item text_pattern_ops` → `item`. */
+function columnFromIndexExpr(part: string): string {
+	let expr = part.trim().replace(/\s+nulls\s+(first|last)$/i, '').replace(/\s+(asc|desc)$/i, '');
+	const quoted = expr.match(/^"([^"]+)"|^`([^`]+)`|^\[([^\]]+)\]/);
+	if (quoted) return quoted[1] || quoted[2] || quoted[3] || '';
+	return expr.split(/\s+/)[0] || '';
+}
+
+const MYSQL_UNINDEXABLE = new Set(['text', 'json', 'csv', 'alias', 'geometry']);
+/** InnoDB index prefix limit with utf8mb4 (4 bytes per character). */
+const MYSQL_INDEX_BYTE_LIMIT = 3072;
+
+/**
+ * MySQL/MariaDB reject unique indexes on text-like columns, and on varchar
+ * combinations that exceed the InnoDB key length. Fail with that reason
+ * before Knex surfaces a raw server error.
+ */
+export function assertFieldsFitUniqueIndex(
+	database: any,
+	schema: SchemaLike | undefined,
+	collection: string,
+	fields: string[],
+): void {
+	const client = getClientName(database);
+	if (!client.includes('mysql') && !client.includes('maria')) return;
+
+	const colFields = schema?.collections?.[collection]?.fields;
+	const blocked: string[] = [];
+	let bytes = 0;
+
+	for (const field of fields) {
+		const meta = colFields?.[field];
+		const type = meta?.type ?? null;
+		const dataType = String(meta?.schema?.data_type || '').toLowerCase();
+		const dataTypeBlocked = /text|blob|json|geometry/.test(dataType) && !/varchar|character/.test(dataType);
+		if ((type && MYSQL_UNINDEXABLE.has(type)) || dataTypeBlocked) {
+			blocked.push(type ? `${field} (${type})` : field);
+			continue;
+		}
+		bytes += mysqlColumnBytes(type, meta?.schema?.max_length ?? null);
+	}
+
+	if (blocked.length) {
+		throw new Error(
+			`MySQL cannot unique-index ${blocked.join(', ')}. Choose shorter string columns instead of text, json, or csv.`,
+		);
+	}
+
+	if (bytes > MYSQL_INDEX_BYTE_LIMIT) {
+		throw new Error(
+			`These columns are too wide for a MySQL unique index (about ${bytes} bytes; InnoDB's limit is ${MYSQL_INDEX_BYTE_LIMIT} with utf8mb4).`,
+		);
+	}
+}
+
+function mysqlColumnBytes(type: string | null, maxLength: number | null): number {
+	if (type === 'string') return (maxLength && maxLength > 0 ? maxLength : 255) * 4;
+	if (type === 'uuid') return (maxLength && maxLength > 0 ? maxLength : 36) * 4;
+	return 8;
 }
 
 export async function applyUniqueConstraint(
 	database: any,
 	collection: string,
 	fields: string[],
+	schema?: SchemaLike,
 ): Promise<{ indexName: string }> {
 	const indexName = buildIndexName(collection, fields);
 	const existing = await constraintExists(database, collection, fields);
@@ -274,11 +421,19 @@ export async function applyUniqueConstraint(
 		return { indexName: existing.indexName || indexName };
 	}
 
+	assertFieldsFitUniqueIndex(database, schema, collection, fields);
+
 	await database.schema.alterTable(collection, (table: any) => {
 		table.unique(fields, { indexName });
 	});
 
 	return { indexName };
+}
+
+/** Drop failed because the index/constraint is already gone. Safe to untrack. */
+export function isMissingConstraintError(error: unknown): boolean {
+	const message = String((error as { message?: string })?.message || error || '');
+	return /does not exist|doesn't exist|no such index|check that column\/key exists/i.test(message);
 }
 
 export async function dropUniqueConstraint(

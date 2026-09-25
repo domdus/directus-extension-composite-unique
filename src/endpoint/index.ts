@@ -13,6 +13,7 @@ import {
 	constraintExists,
 	dropUniqueConstraint,
 	findDuplicateGroups,
+	isMissingConstraintError,
 	listCollectionCandidates,
 } from '../shared/constraints';
 import type { CheckResult, CompositeUniqueEntry } from '../shared/types';
@@ -313,7 +314,7 @@ export default (router: Router, context: EndpointExtensionContext) => {
 				return;
 			}
 
-			const { indexName } = await applyUniqueConstraint(database, collection, fields);
+			const { indexName } = await applyUniqueConstraint(database, collection, fields, schema);
 			const entry: CompositeUniqueEntry = {
 				collection,
 				fields,
@@ -376,7 +377,7 @@ export default (router: Router, context: EndpointExtensionContext) => {
 				}
 
 				try {
-					const { indexName } = await applyUniqueConstraint(database, target.collection, target.fields);
+					const { indexName } = await applyUniqueConstraint(database, target.collection, target.fields, schema);
 					const entry: CompositeUniqueEntry = {
 						collection: target.collection,
 						fields: target.fields,
@@ -423,6 +424,7 @@ export default (router: Router, context: EndpointExtensionContext) => {
 				try {
 					await dropUniqueConstraint(database, collection, fields, entry?.indexName);
 				} catch (error: any) {
+					if (!isMissingConstraintError(error)) throw error;
 					logger.warn(`[composite-unique] drop constraint: ${error?.message || error}`);
 				}
 			}

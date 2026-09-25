@@ -103,7 +103,7 @@ Applying a composite unique **constraint** (the rule) creates a **unique index**
 
 - The **Index Name** (e.g. `uq_articles_tags_articles_id_tags_id`) is the name of that database unique index  
 - Prefix: `uq_` (unique). Older installs may still show `cu_` — both are recognized  
-- PostgreSQL, MySQL/MariaDB, SQLite (and other Directus SQL vendors via Knex) are supported the same way
+- PostgreSQL, CockroachDB, MySQL/MariaDB, SQLite, and SQL Server are supported the same way
 
 In the UI, status and navigation say **Constrained** / **Constraints** (the feature). The technical column shows **Index Name** (the DB object).
 
