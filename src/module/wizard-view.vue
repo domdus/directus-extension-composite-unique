@@ -33,16 +33,6 @@
 		</template>
 
 		<div :class="pageClass">
-			<v-divider
-				class="section-divider"
-				large
-				:inline-title="false"
-				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued)' }"
-			>
-				<template #icon><v-icon name="auto_fix_high" /></template>
-				Wizard
-			</v-divider>
-
 			<p class="page-intro">
 				Select collections, check for duplicate combinations, clean them up, then apply composite unique
 				constraints. Nothing is changed until you confirm.
@@ -502,10 +492,6 @@ onMounted(load);
 
 .page-container--flush-top {
 	padding-block-start: 0;
-}
-
-.section-divider {
-	margin-bottom: 12px;
 }
 
 .page-intro,

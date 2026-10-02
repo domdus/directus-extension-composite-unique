@@ -23,16 +23,6 @@
 		</template>
 
 		<div :class="pageClass">
-			<v-divider
-				class="section-divider"
-				large
-				:inline-title="false"
-				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued)' }"
-			>
-				<template #icon><v-icon name="verified" /></template>
-				Constraints
-			</v-divider>
-
 			<p class="page-intro">
 				Composite unique constraints applied by this extension. The database enforces uniqueness; the hook
 				returns clear API errors on create/update.
@@ -167,10 +157,6 @@ onMounted(load);
 
 .page-container--flush-top {
 	padding-block-start: 0;
-}
-
-.section-divider {
-	margin-bottom: 12px;
 }
 
 .page-intro,
