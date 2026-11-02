@@ -12,6 +12,7 @@ type SchemaLike = {
 				{
 					field?: string;
 					type?: string | null;
+					special?: string[] | null;
 					schema?: { max_length?: number | null; data_type?: string | null } | null;
 				}
 			>;
@@ -166,12 +167,15 @@ export async function findDuplicateGroups(
 	fields: string[],
 	primaryKey: string,
 	limitGroups = 100,
+	orderField?: string | null,
 ): Promise<DuplicateGroup[]> {
 	if (fields.length < 2) return [];
 
-	const grouped = await database(collection)
-		.select(fields)
-		.count({ count: '*' })
+	// A unique index allows repeated NULLs, so rows with an empty field are never duplicates.
+	let duplicates = database(collection).select(fields).count({ count: '*' });
+	for (const field of fields) duplicates = duplicates.whereNotNull(field);
+
+	const grouped = await duplicates
 		.groupBy(fields)
 		.havingRaw('count(*) > 1')
 		.limit(limitGroups);
@@ -186,27 +190,11 @@ export async function findDuplicateGroups(
 
 		const count = Number(row.count ?? row.COUNT ?? row['count(*)'] ?? 0);
 		const where: Record<string, unknown> = {};
-		let hasNull = false;
+		for (const field of fields) where[field] = values[field];
 
-		for (const field of fields) {
-			if (values[field] == null) {
-				hasNull = true;
-				break;
-			}
-			where[field] = values[field];
-		}
-
-		let idsQuery = database(collection).select(primaryKey);
-		if (hasNull) {
-			for (const field of fields) {
-				if (values[field] == null) idsQuery = idsQuery.whereNull(field);
-				else idsQuery = idsQuery.where(field, values[field]);
-			}
-		} else {
-			idsQuery = idsQuery.where(where);
-		}
-
-		const idRows = await idsQuery.limit(500);
+		let idsQuery = database(collection).select(primaryKey).where(where);
+		if (orderField && orderField !== primaryKey) idsQuery = idsQuery.orderBy(orderField, 'asc');
+		const idRows = await idsQuery.orderBy(primaryKey, 'asc').limit(500);
 		const ids = (idRows || []).map((r: Record<string, unknown>) => r[primaryKey] as string | number);
 
 		groups.push({
@@ -217,6 +205,15 @@ export async function findDuplicateGroups(
 	}
 
 	return groups;
+}
+
+/** Oldest-first ordering for keep_first / keep_last. UUID keys alone say nothing about age. */
+export function creationOrderField(schema: SchemaLike, collection: string): string | null {
+	for (const field of Object.values(schema.collections?.[collection]?.fields || {})) {
+		const special = (field as { special?: string[] | null }).special;
+		if (field.field && Array.isArray(special) && special.includes('date-created')) return field.field;
+	}
+	return null;
 }
 
 export async function constraintExists(

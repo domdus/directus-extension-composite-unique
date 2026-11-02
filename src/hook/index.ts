@@ -71,25 +71,30 @@ async function assertUniqueCombination(
 	}
 }
 
-export default defineHook(({ filter }, { database, getSchema, exceptions }) => {
+export default defineHook(({ filter }, context) => {
+	const { database, getSchema } = context;
 	const InvalidPayloadException =
-		(exceptions as any)?.InvalidPayloadException ||
-		class InvalidPayloadException extends Error {
+		(context as any).exceptions?.InvalidPayloadException ||
+		// Directus 10+ has no `exceptions` and turns any error not named DirectusError into a 500.
+		class InvalidPayloadError extends Error {
+			override name = 'DirectusError';
 			status = 400;
 			code = 'INVALID_PAYLOAD';
-			constructor(message: string) {
-				super(message);
-			}
+			extensions = {};
 		};
 
 	let cachedConfig: CompositeUniqueConfig | null = null;
 	let cacheAt = 0;
 	const CACHE_MS = 5000;
 
-	const getConfig = async () => {
+	/**
+	 * Write filters run inside Directus's transaction. Use its connection: on SQLite the pool
+	 * holds one connection, so querying the global handle here waits forever.
+	 */
+	const getConfig = async (db: any) => {
 		const now = Date.now();
 		if (cachedConfig && now - cacheAt < CACHE_MS) return cachedConfig;
-		cachedConfig = await readConfig(database);
+		cachedConfig = await readConfig(db);
 		cacheAt = now;
 		return cachedConfig;
 	};
@@ -106,33 +111,35 @@ export default defineHook(({ filter }, { database, getSchema, exceptions }) => {
 		return payload;
 	});
 
-	filter('items.create', async (payload: any, meta: any) => {
+	filter('items.create', async (payload: any, meta: any, eventContext: any) => {
 		const collection = meta?.collection as string | undefined;
 		if (!collection || collection.startsWith('directus_')) return payload;
 
-		const config = await getConfig();
+		const db = eventContext?.database ?? database;
+		const config = await getConfig(db);
 		const entries = config.entries.filter((entry) => entry.collection === collection);
 		if (!entries.length) return payload;
 
-		const schema = await getSchema();
+		const schema = eventContext?.schema ?? (await getSchema());
 		const primaryKey = schema?.collections?.[collection]?.primary || 'id';
 
 		for (const entry of entries) {
-			await assertUniqueCombination(database, entry, payload || {}, primaryKey, null, InvalidPayloadException);
+			await assertUniqueCombination(db, entry, payload || {}, primaryKey, null, InvalidPayloadException);
 		}
 
 		return payload;
 	});
 
-	filter('items.update', async (payload: any, meta: any) => {
+	filter('items.update', async (payload: any, meta: any, eventContext: any) => {
 		const collection = meta?.collection as string | undefined;
 		if (!collection || collection.startsWith('directus_')) return payload;
 
-		const config = await getConfig();
+		const db = eventContext?.database ?? database;
+		const config = await getConfig(db);
 		const entries = config.entries.filter((entry) => entry.collection === collection);
 		if (!entries.length) return payload;
 
-		const schema = await getSchema();
+		const schema = eventContext?.schema ?? (await getSchema());
 		const primaryKey = schema?.collections?.[collection]?.primary || 'id';
 		const keys: Array<string | number> = Array.isArray(meta?.keys) ? meta.keys : [];
 
@@ -141,10 +148,10 @@ export default defineHook(({ filter }, { database, getSchema, exceptions }) => {
 			if (!touchesComposite) continue;
 
 			for (const key of keys) {
-				const existing = await database(collection).where({ [primaryKey]: key }).first();
+				const existing = await db(collection).where({ [primaryKey]: key }).first();
 				const merged = { ...(existing || {}), ...(payload || {}) };
 				await assertUniqueCombination(
-					database,
+					db,
 					entry,
 					merged,
 					primaryKey,

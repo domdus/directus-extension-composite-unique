@@ -2,7 +2,7 @@
 	"name": "directus-extension-composite-unique",
 	"description": "Find duplicate combinations, clean them up, and apply composite unique constraints — with a Studio wizard and API-side validation",
 	"icon": "key",
-	"version": "1.0.4",
+	"version": "1.1.0",
 	"license": "MIT",
 	"keywords": [
 		"directus",
@@ -58,12 +58,16 @@
 		"build": "directus-extension build",
 		"dev": "directus-extension build -w --no-minify",
 		"link": "directus-extension link",
-		"add": "directus-extension add"
+		"add": "directus-extension add",
+		"test": "tsx --test \"src/**/*.test.ts\"",
+		"typecheck": "tsc --noEmit -p .",
+		"test:e2e": "npm run build && node test/e2e/run.mjs"
 	},
 	"devDependencies": {
 		"@directus/extensions-sdk": "^17.0.0",
 		"@types/express": "^4.17.21",
-		"@types/node": "^20.0.0",
+		"@types/node": "^20.19.43",
+		"tsx": "^4.23.15",
 		"typescript": "^5.0.0",
 		"vue": "^3.3.7"
 	}
