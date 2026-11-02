@@ -174,7 +174,7 @@
 			<template v-else-if="step === 2">
 				<v-notice type="warning" class="notice">
 					Dedupe keeps one row per duplicate combination and deletes the rest. Prefer
-					<strong>Keep First</strong> (lowest primary key) unless you know you need the newest row.
+					<strong>Keep First</strong> (oldest row) unless you know you need the newest row.
 				</v-notice>
 
 				<div class="toolbar">
@@ -296,8 +296,8 @@ const fieldOverrides = reactive<Record<string, string[]>>({});
 const checkResults = ref<CheckResult[]>([]);
 const dedupeStrategy = ref<'keep_first' | 'keep_last'>('keep_first');
 const strategyItems = [
-	{ text: 'Keep First (Lowest PK)', value: 'keep_first' },
-	{ text: 'Keep Last (Highest PK)', value: 'keep_last' },
+	{ text: 'Keep First (Oldest)', value: 'keep_first' },
+	{ text: 'Keep Last (Newest)', value: 'keep_last' },
 ];
 const busyKey = ref<string | null>(null);
 const notice = ref<{ type: 'success' | 'warning' | 'info' | 'danger'; text: string } | null>(null);

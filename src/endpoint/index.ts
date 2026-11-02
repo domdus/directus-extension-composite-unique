@@ -12,6 +12,7 @@ import {
 	applyUniqueConstraint,
 	constraintExists,
 	dropUniqueConstraint,
+	creationOrderField,
 	findDuplicateGroups,
 	isMissingConstraintError,
 	listCollectionCandidates,
@@ -251,11 +252,17 @@ export default (router: Router, context: EndpointExtensionContext) => {
 				await itemsService.deleteMany(explicitIds);
 				deletedIds = explicitIds;
 			} else {
-				const groups = await findDuplicateGroups(database, collection, fields, primaryKey, 500);
+				const groups = await findDuplicateGroups(
+					database,
+					collection,
+					fields,
+					primaryKey,
+					500,
+					creationOrderField(schema, collection),
+				);
 				for (const group of groups) {
-					const sorted = [...group.ids].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-					const keep = strategy === 'keep_last' ? sorted[sorted.length - 1] : sorted[0];
-					const toDelete = sorted.filter((id) => id !== keep);
+					const keep = strategy === 'keep_last' ? group.ids[group.ids.length - 1] : group.ids[0];
+					const toDelete = group.ids.filter((id) => id !== keep);
 					if (toDelete.length === 0) continue;
 					await itemsService.deleteMany(toDelete);
 					deletedIds.push(...toDelete);

@@ -1,0 +1,51 @@
+services:
+  db-postgres: &db
+    profiles: [postgres]
+    image: postgres:16.3
+    networks: { default: { aliases: [db] } }
+    environment: { POSTGRES_DB: d, POSTGRES_USER: d, POSTGRES_PASSWORD: d }
+    healthcheck: { test: ['CMD-SHELL', 'pg_isready -U d -d d'], interval: 3s, retries: 40 }
+  db-mysql: &mysql
+    <<: *db
+    profiles: [mysql]
+    image: mysql:8.4
+    environment: { MYSQL_DATABASE: d, MYSQL_USER: d, MYSQL_PASSWORD: d, MYSQL_ROOT_PASSWORD: d }
+    healthcheck: { test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -ud -pd'], interval: 3s, retries: 60 }
+  db-mariadb:
+    <<: *mysql
+    profiles: [mariadb]
+    image: mariadb:11
+    healthcheck: { test: ['CMD-SHELL', 'mariadb-admin ping -h 127.0.0.1 -ud -pd'], interval: 3s, retries: 60 }
+  directus:
+    image: directus/directus:11.17.4
+    restart: 'no'
+    depends_on:
+      db-postgres: { condition: service_healthy, required: false }
+      db-mysql: { condition: service_healthy, required: false }
+      db-mariadb: { condition: service_healthy, required: false }
+    ports: ['127.0.0.1:${E2E_PORT}:8055']
+    environment:
+      KEY: e2e-key
+      SECRET: e2e-secret-e2e-secret-e2e-secret
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: e2e-password
+      PUBLIC_URL: http://127.0.0.1:${E2E_PORT}
+      DB_CLIENT: ${DB_CLIENT}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_DATABASE: d
+      DB_USER: d
+      DB_PASSWORD: d
+      DB_FILENAME: /directus/database/data.db
+      EXTENSIONS_AUTO_RELOAD: 'false'
+      STORAGE_LOCATIONS: local,abs
+      STORAGE_LOCAL_DRIVER: local
+      STORAGE_LOCAL_ROOT: ./uploads
+      STORAGE_ABS_DRIVER: local
+      STORAGE_ABS_ROOT: /directus/uploads2
+      LOG_LEVEL: warn
+    volumes:
+      - ${E2E_DATA}/uploads:/directus/uploads
+      - ${E2E_DATA}/uploads2:/directus/uploads2
+      - ${E2E_DATA}/extensions:/directus/extensions
+      - ${E2E_DATA}/database:/directus/database
